@@ -1,0 +1,657 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// arquivo: SdH.txt
+// autor:   Ivan Ramos Pagnossin (irpagnossin)
+// e-mail:  irpagnossin@yahoo.com.br
+// URL:	    http://www.irpagnossin.hpg.ig.com.br
+// data:    04-03-2003
+//
+//	Este arquivo de script do Microcal Origin foi desenvolvido para auxiliar nas análises do efeito
+// Shubnikov-de Haas. Com seu auxílio, e NUNCA dispensando a análise do pesquisador, pode-se determinar,
+// a partir de um conjunto de pares ordenados (B,V_{xx}), a concentração de portadores em cada uma das
+// sub-bandas observáveis e suas respectivas mobilidades quânticas (o método é tão preciso quanto melhor
+// for o espectro obtido, que por sua vez depende não só da qualidade da amostra como também das capaci-
+// dades dos aparelhos envolvidos).
+//	Para detalhes do método e de como utilizar apropriadamente esse script, consulte a página do autor.
+//
+// dependências: FIT.OGS e FFT.OTW (ambos são acompanham o Origin)
+// - Este script foi testado na versão 6.0 do Microcal Origin. Sabe-se que não funciona na versão 5.0.
+// bugs: Frequentemente ocorre de a rotina GAUSS determinar erroneamente o pico e sua posição para o
+//       caso da janela Hanning mais curta. Uma segunda (ou terceira) tentativa deve resolver. Ainda não
+//	 sei a origem deste problema.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	espectrosFFT
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+[espectrosFFT]
+
+  second -i;				// Zera a contagem de tempo.
+
+  LLHW1     = %1;			// Valor inicial do limite inferior - em Tesla - da janela.
+  LLHW2     = %2;			// Valor final do limite inferior - em Tesla - da janela.
+  ULHW      =  1;			// O limite superior da janela permanece fixo.
+  N         = %3;			// Quantidade de pontos a ser calculado.
+  NFFT      = %4;			// Potência que determina o número de pontos utilizado na FFT = 2^N
+  %W        = %5;			// Guarda o nome da tabela que contém os dados na variável %W.
+  concTotal = 4.5;			// Concentração total de portadores na amostra (imposto durante o crescimento).
+
+  if (NFFT > 12) 
+    {type -c "It is not recommended that you set the fourth argument greater than 12. Are you sure to proceed?";}
+  if (exist(PICO)  != 0) 
+    {type -b "Please rename the existing window named PICO: I need this name to proceed."; return 0;}
+  if (exist(AUXILIAR) != 0) 
+    {type -b "Please rename the existing window named AUXILIAR: I need this name to proceed."; return 0;}
+
+  second -i;				// Zera a contagem de tempo.
+
+  run.section(,smooth-diff,%W);
+  //%W_D = %W_c;	// <--------------------- TESTE
+
+  create PICO -w 10;			// Abre uma nova tabela chamada PICO.
+  worksheet -c C;			
+  worksheet -c D;
+  worksheet -c E;			// Adiciona as colunas C, D e E à tabela PICO.
+
+  delta1 = (LLHW2 - LLHW1) / (N - 1);		
+  for(m=1 ; m<=N ; m++)
+    {
+    run.section(,FFT,$(ULHW) $(LLHW1 + (m - 1) * delta1) $(NFFT) FFT$(m) $(concTotal));
+
+    PICO_A[m] = %W_A[iFinal];
+    PICO_E[m] = m;    
+
+    //type "expNpontos = $(expNpontos)";
+    //type "tDelta     = $(fft.forward.tDelta)";
+    //type "----------------------------";
+
+    }
+
+  PICO_B = 1 / PICO_A;
+
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Formata as colunas da tabela PICO -------------------------------------------------------//
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  window -a PICO;				// Coloca o foco das atividades na tabela PICO.
+
+  worksheet -t 1 2;				// Desassocia quaisquer variáveis da coluna A.
+  worksheet -t 2 4;				// Associa a variável X à coluna B.
+  worksheet -t 3 1;				// Associa a variável Y à coluna C.
+  worksheet -t 4 1;				// Associa a variável Y à coluna D.
+  worksheet -t 5 2;				// Desassocia quaisquer variáveis da coluna E.
+
+  PICO!wks.col1.label$ = "B(T)";		// Determina o rótulo da coluna A (coluna número 1).
+  PICO!wks.col2.label$ = "1/B";			// Determina o rótulo da coluna B (2).
+  PICO!wks.col3.label$ = "n (1e12 cm-2)";	// Determina o rótulo da coluna C (3).
+  PICO!wks.col3.width  = 13;			// Determina como 13 caracteres o comprimento da coluan C (3).
+  PICO!wks.col4.label$ = "max|F(n)| (u.a.)";	// Determina o rótulo da coluna D (4).
+  PICO!wks.col4.width  = 18;			// Determina como 18 caracteres o comprimento da coluan D (4).
+  PICO!wks.col5.label$ = "FFT#";		// Determina o rótulo da coluna E (5).
+  PICO!wks.labels();				// Habilita a apresentação dos rótulos.
+
+  window -z;					// Maximiza a tabela PICO.
+
+  window -a FFT$(N);				// Coloca o foco das atividades na tabela FFT<N>.
+  worksheet -s 2 0 2 0;				// Seleciona toda a coluna 2 da tabela FFT<N>.
+  worksheet -p 200 espectroFFT;			// Plota o gráfico da coluna 2 (tabela FFT<N>) conforme 
+						// o template 'espectroFFT.OTP'.
+  graph FFT1_r;					// Plota o gráfico da coluna 2 da tabela FFT1 junto com a de FFT<N>.
+
+  delete -a;					// Apaga todas as tabelas temporárias utilizadas.
+
+  second -e ElapsedTime;		// Associa à variável "ElasedTime" o tempo decorrido na rotina GAUSS.
+  type -b "ESPECTROS: $(ElapsedTime) segundos\n";
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	ajustaGauss
+// 	Ajusta uma função Gaussiana ao intervalo [%1,%2] e escreve os valores do pico na tabela PICO.
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+[ajustaGauss]
+
+  second -i;				// Zera a contagem de tempo.
+
+  for (i=1 ; i<=N ; i++)
+    {
+    nInicial = %1;			// Limite INFERIOR (coluna n das tabelas FFT#) do intervalo que contém o pico.
+    nFinal   = %2;			// Limite SUPERIOR (coluna n das tabelas FFT#) do intervalo que contém o pico.
+
+    run.section(,getNearest,nInicial FFT$(i)_n);
+    nInicial = ivalorP;
+
+    run.section(,getNearest,nFinal   FFT$(i)_n);
+    nFinal   = ivalorP;
+
+    window -a FFT$(i);			// Coloca o foco das atividades na tabela FFT#, com # variando de 1 até N.
+    worksheet -s 1 nInicial 2 nFinal;	// Seleciona o intervalo de interesse para a rotina de ajuste gaussiano.
+    run.section(fit,fit1peak,gauss);	// Efetua o ajuste gaussiano utilizando o script FIT.OGS do próprio Origin.
+
+    x0 = P2;				// Calcula a posição do pico através do parâmetro P2 determinado em FIT.OGS.
+    y0 = P4/(P3*sqrt(pi/2)) + y0;	// Calcula a altura do pico através dos parâmetros P3 e P4 determinados em FIT.OGS.
+					// y0 é determinado pela rotina [fit1peak] e corresponde à base da gaussiana.
+
+    PICO_C[i] = $(x0,*5);		// Coloca a posição do pico na coluna C da tabela PICO, linha #.
+    PICO_D[i] = $(y0,*5);		// Coloca a altura do pico na coluna D da tabela PICO, linha #.
+
+
+    if ((i != 1) && (i != N)) window -ca NLSF2;	// Apaga todas as tabelas com informações do ajuste gaussiano,
+						// exceto a primeira (NLSF1) e a última (NLSF2), que devem ser
+						// utilizadas para verificar a coerência dos resultados.
+
+    window -ca GRAPH2;			// Apaga os gráficos gerados pela rotina de ajuste gaussiano. Não funciona
+					// caso já exista algum outro gráfico. Para resolver esta situação de
+					// uma maneira séria, preciso saber o nome da última janela gerada;
+					// Não sei como fazer.
+    }
+
+  sum(PICO_C);
+  PICO_C[N + 2] = $(sum.mean);		// Determina o valor médio das concentrações calculadas (coluna C da tabela PICO).
+  PICO_C[N + 3] = PICO_C[N + 2]/0.04836;
+
+  run.section(,multiLF,PICO);		// Calcula as mobilidades quânticas.
+
+  worksheet -s 4 0 4 0;			// Seleciona a coluna 4 da tabela PICO.
+  worksheet -p 201 mobilidade1; 	// Plota o gráfico da coluna 4 (tabela PICO) conforme o template 'mobilidade1.OTP'
+
+  sum(PICO_F);
+  PICO_F[N + 2] = $(sum.mean);
+  PICO_F[N + 3] = 10000*pi/PICO_F[N + 2];
+
+  delete -a;				// Apaga todas as tabelas temporárias utilizadas.
+
+  second -e ElapsedTime;		// Associa à variável "ElasedTime" o tempo decorrido na rotina GAUSS.
+  type -b "GAUSS: $(ElapsedTime) segundos\n";
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	SMOOTH-DIFF
+//
+//	Conforme o método desenvolvido para o cômputo das concentrações e mobilidades, esta rotina efetua
+// dois alisamentos intercalados por duas diferenciações do sinal V_{xx} (em mV). Além disso, a abscissa é 
+// trocada por seu recíproco, de modo a obtermos o par ordenado (1/B,V''_{xx}), sobre o qual se efetuam as
+// transformadas de Fourier.
+//	De forma prática, esta rotina pode ser acessada pelo prompt de comando do Origin digitando-se
+//	run.section(SdH,smooth-diff,::::)
+// onde :::: é o nome da tabela que contém os dados experimentais; Espera-se que se esta tabela forneça duas 
+// colunas, A e B, contendo, respectivamente, o valor do campo (em tesla) e a tensão no sentido da corrente
+// (em milivolts).
+//	O resultado da execução desta rotina é uma tabela (de nome DATA1) com as seguintes colunas:
+//
+//	 A	B(X)      C      D(Y)		<---- Nome da coluna.
+//	B(T)    1/B    SdH(mV)  -> D''  	<---- Rótulo da coluna.
+//
+//	Este resultado é utilizado pela rotina FFT. A tabela :::: em sua forma inicial deixará de existir.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+[Smooth-Diff]
+
+  %W = %1;					// Guarda o nome da tabela que contém os dados na variável %W.
+
+  window -a %W;					// Coloca o foco das atividades na tabela %W, argumento desta rotina.
+
+  worksheet -t 1 2;				// Desassocia quaisquer variáveis da coluna A (coluna número 1).
+  worksheet -t 2 2;				// Desassocia quaisquer variáveis da coluna B (coluna número 2).
+
+  worksheet -n 2 C;				// Renomeia a segunda coluna de B para C.
+  worksheet -i 1 B;				// Cria uma nova coluna, de nome B, entre A e C.
+
+  worksheet -t 2 4;				// Associa a variável X à coluna B (recém criada).
+
+  col(B) = 1 / col(A);
+
+  worksheet -a 4;				// Cria quatro novas colunas, nomeadas D, E, F e G.
+
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Propriedades compartilhadas entre os métodos de alisamento e diferenciação --------------//
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////
+  curve.base$ 	  = " ";			// Estabelece que y = 0 é a origem do eixo Y.
+  curve.smoothpts = 5;				// No processo de alisamento, 5 pontos são usados para a média.
+  curve.x$        = %1_B;			// Associa a coluna B ao eixo das abscissas (X).
+  curve.derivDeg  = 1;				// degree of differentiation = 1. Não sei o que significa.
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Primeiro passo: Alisa (smooth) a coluna C e coloca o resultado a coluna D -----------------//
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  curve.data$   = %1_C;				// Associa a coluna C ao eixo das ordenadas (Y).
+  curve.result$ = %1_D;				// Os resultados do alisamento serão colocados na coluna D.
+  curve.adjave();				// Executa o método SMOOTH (alisamento) propriamente dito.
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Segundo passo: Diferencia a coluna D e coloca o resultado na coluna E ---------------------//
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  curve.data$   = %1_D;				// Associa a coluna D ao eixo das ordenadas (Y).
+  curve.result$ = %1_E;				// Os resultados da diferenciação serão colocados na coluna D.
+  curve.deriv();				// Executa a o método de diferenciação propriamente dito.
+
+  mark -d %1_A -b 1 -e 1;			// Apaga a primeira linha da tabela ::::. Isso é necessário
+						// por que a derivada deste ponto não pode ser calculada, 
+						// uma vez que não possui o vizinho à esquerda.
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Terceiro passo: Alisa (smooth) a coluna E e coloca o resultado na coluna F ----------------//
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  curve.data$   = %1_E;
+  curve.result$ = %1_F;
+  curve.adjave();
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Quarto passo: Diferencia a coluna F e coloca o resultado na coluna G ----------------------//
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  curve.data$   = %1_F;
+  curve.result$ = %1_G;
+  curve.deriv();
+
+  mark -d %1_A -b 1 -e 1;
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //--------- Formata as colunas da tabela :::: ---------------------------------------------------------//
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  worksheet -t 7 1;				// Associa a coluna G (coluna número 7) á VARIÁVEL Y.
+
+  delete %1_D;
+  delete %1_E;
+  delete %1_F;					// Apaga as colunas E, E e F.
+
+  worksheet -n 4 D;				// Renomeia a quarta coluna de G para D.
+
+  %1!wks.col1.label$ = "B(T)";			// Determina o rótulo da coluna A (coluna número 1).
+  %1!wks.col2.label$ = "1/B";			// Determina o rótulo da coluna B (coluna número 2).
+  %1!wks.col3.label$ = "SdH (mV)";		// Determina o rótulo da coluna C (coluna número 3).
+  %1!wks.col3.width  = 10;			// Determina como 10 caracteres a largura da coluna C.
+  %1!wks.col4.label$ = "-> D''";		// Determina o rótulo da coluna D (coluna número 4).
+  %1!wks.col4.width  = 10;			// Determina como 10 caracteres a largura da coluna D.
+  %1!wks.labels();				// Habilita a apresentação dos rótulos.
+
+  window -z;					// Maximiza a tabela %W.
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	FFT - Fast Fourier Transform
+//	São 5 (cinco) os argumentos dessa rotina:
+//		1. Valor inicial do limite INFERIOR da janela Hanning (em tesla).
+//		2. Valor final do limite INFERIOR da janela Hanning (em tesla).
+//		3. Quantidade de espectros a se calcular.
+//		4. Potência que determina o número de pontos a serem usados na FFT. Procure não excecer 
+//		   12 ou 13 pois o processamento tornar-se-á extremamente longo.
+//		5. Nome da tabela onde deve ser guardado os dados do espectro.
+//
+//	Exemplo: A rotina pode ser acessada pelo prompt de comando do Origin, assim:
+//
+// 		 run.section(...,FFT,5 10 11 FFT1)
+//
+//		 Com esta instrução, a rotina calculará UM espectro FFT com janela Hanning variando desde
+//		 5 tesla (1º argumento) até 10 tesla (2º argumento), Para isso serão utilizados 2^11=2048
+//		 pontos (note que o expoente do 2 é o 3º argumento); Os resultados serão colocados na
+//		 tabela de nome FFT1
+//
+//	obs.1:  Embora os limites da janela sejam dados em TESLA, a rotina, na realidade, seleciona a coluna
+//		de DATA1 que possui o recíproco do campo. Para mais detalhes sobre o porquê disso, veja
+//		a descrição do método em http://www.irpagnossin.hpg.ig.com.br
+//	obs.2:  Essa rotina utiliza a tabela DATA1 como fonte das informações, e pressupões que a rotina
+//		SMOOTH-DIFF a tenha produzido. Isto posto, NÃO UTILIZE ESTA ROTINA ANTES DE UTILIZAR SMOOTH-DIFF.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[FFT]
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//-------- Interpola o intervalo indicado (argumentos) para que se possa aplicar o algorítmo FFT --------//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  window -a %W;					// Coloca a tabela %W no foco das atividades.
+
+  run.section(,getNearest,%1 %W_A 0);	
+  iInicial = ivalorP;				// Procura o índice da linha que contém o valor de campo mais
+						// próximo do solicitado (terceiro argumento: %1).
+
+  run.section(,getNearest,%2 %W_A 0);
+  iFinal   = ivalorP;				// Procura o índice da linha que contém o valor de campo mais
+						// próximo do solicitado (terceiro argumento: %2). 
+
+//--------------------- EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE --------------------- 15-08-2003
+
+  //Npontos = iFinal - iInicial + 1;
+  //expNpontos = int(ln(Npontos)/ln(2));
+  //if(abs(N-2^expNpontos) >= abs(N-2^(expNpontos + 1))) expNpontos++;
+  //Npontos = 2^expNpontos;
+
+  Npontos = 2^%3;				// Para que se possa usufruir do algorítmo FFT, mais veloz,
+						// a quantidade de pontos do sinal a ser transformado deve
+						// ser uma potência de 2.
+
+//--------------------- EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE EM TESTE ---------------------
+
+  Janela = 3;					// Determina que a janela a ser utilizada na DFT seja a HANNING.
+
+  create AUXILIAR -w $(iFinal - iInicial + 1);	// Cria uma nova tabela temporária chamada AUXILIAR. Nela serão 
+						// colocados os resultados da interpolação.
+		
+						// Copia o intervalo indicado (argumentos) da tabela %W para AUXILIAR.
+  copy -b iInicial %W_B AUXILIAR_A -b 1 -e $(iFinal - iInicial + 1);
+  copy -b iInicial %W_D AUXILIAR_B -b 1 -e $(iFinal - iInicial + 1);
+
+  window -a AUXILIAR;				// Coloca a tabela AUXILIAR no foco das atividades.
+  worksheet -a 2;				// Cria duas novas colunas: C e D.
+
+						// Interpola o intervalo da variável independente (X) de modo que
+						// todos os pontos fiquem igualmente separados. É neste ponto que
+						// o script consome a maior quantidade de tempo. Não encontrei 
+						// nenhuma rotina pronta do Origin que faça isso de modo mais veloz.
+
+  delta = (col(A)[AUXILIAR!wks.maxRows] - col(A)[1])/(Npontos - 1);
+  for (i=1;i<=Npontos;i++) col(C)[Npontos + 1 - i] = col(A)[1] + (i - 1)*delta;
+
+  worksheet -t 4 2;				// Desassocia quaisquer variáveis da coluna D. Esta necessidade foi
+						// descoberta experimentalmente.
+
+  copy -s Npontos AUXILIAR_B AUXILIAR_D;	// Interpola o intervalo da variável dependente (Y).
+
+  worksheet -t 1 2;				// Desassocia quaisquer variáveis da coluna A.
+  worksheet -t 2 2;				// Desassocia quaisquer variáveis da coluna B.
+  worksheet -t 3 2;				// Desassocia quaisquer variáveis da coluna C.
+
+  worksheet -t 3 4;				// Associa a VARIÁVEL X à coluna C.
+  worksheet -t 4 1;				// Associa a VARIÁVEL Y à coluna D.
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//-------- Aqui começa a transformada discreta propriamente dita ----------------------------------------//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  fft.reset( );					// Retorna as DLLs aos seus estados iniciais.
+  fft.forward=1;				// 1 para que se execute a TRANSFORMADA, 0 para a ANTI-TRANSFORMADA.
+  fft.forward.timeData$=AUXILIAR_C;		// Abscissa a ser utilizada (tempo)
+  fft.forward.tdelta=AUXILIAR_C[2]-AUXILIAR_C[1];	// Intervalo de amostragem (tempo)
+  fft.forward.realData$=AUXILIAR_D;		// Ordenada a ser utilizada (amplitude do sinal do domínio do tempo)
+
+  window -t W fft %4;				// Abre uma tabela de nome dado pelo quarto argumento (%4) a
+						// partir do template FFT.
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//--------- Associa cada uma das colunas da tabela %4 à cada uma das saídas do método da DFT ------------//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  fft.output.samplingdata$ = %4_Freq;		// A coluna %4_Freq conterá as informações da freqüência.
+  fft.output.realdata$     = %4_Real;		// A coluna %4_Real conterá as informações da parte real.
+  fft.output.imagdata$     = %4_Imag;		// A coluna %4_Imag conterá as informações da parte imaginária.
+  fft.output.ampdata$      = %4_r;		// A coluna %4_r conterá as informações do módulo.
+  fft.output.phasedata$    = %4_Phi;		// A coluna %4_r conterá as informações da fase.
+  fft.output.powerdata$    = %4_Power;		// A coluna %4_Power conterá as informações da potência (?).
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//--------- Propriedades da transformada ----------------------------------------------------------------//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  fft.real      = 1;				// A FFT será executada sobre números reais.
+  fft.normalize = 0;				// NÃO normaliza a FFT.
+  fft.shifted   = 1;				// "utiliza freqüências negativas"
+  fft.windowing = Janela;			// Determina a janela a ser utilizada.
+  fft.spectrum  = 1;				// Apresenta espectro de amplitude.
+  fft.unwrap    = 1;				// Apresenta fase "unwrapped".
+  fft.forward( );				// Executa a transformada com as propriedades acima.
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//--------- Formata cada uma das colunas da tabela %4 ---------------------------------------------------//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  window -ca AUXILIAR;				// Apaga a tabela AUXILIAR (sua utilidade encerrou-se com a execução
+						// da transformada de Fourier.
+
+  window -a %4;					// Coloca a tabela %4 (alvo da FFT) no foco das atividades.
+  delete %4_Power;
+  delete %4_Phi;
+  delete %4_Imag;
+  delete %4_Real;				// Apaga todas as colunas que não têm utilidades para nós.
+
+  worksheet -i 1 n;				// Cria uma coluna de nome "n" logo após a primeira coluna
+  %4_n = 0.04836 * %4_Freq;			// Associa os valores da coluna "n" aos da coluna "Freq"
+  mark -d %4_n -b 1 -e $(Npontos/2);		// Exclui a metade inferior do espectro (freqüências negativas),
+						// uma vez que NÃO trazem informação adicional.
+
+  delete %4_Freq;				// Apaga a coluna referente à freqüência (pois o que nos 
+						// interessa é a coluna contendo as concentrações "n").
+
+  useTDELTA = 1;
+  if (useTDELTA == 1) 
+    {
+    worksheet -c aux;
+    %4_aux = fft.forward.tDelta * %4_r;
+    %4_r = %4_aux;
+    delete %4_aux;
+    }
+
+
+  worksheet -t 1 4;				// Associa a variável X à coluna "n".
+  worksheet -t 2 1;				// Associa a variável Y à coluna "r".
+
+  if (%5 > 0.0) 
+    {
+    run.section(,getNearest,%5 %4_n);
+    iconcTotal = ivalorP;
+
+    mark -d %4_n -b iconcTotal -e %4!wks.maxRows;
+    }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	ajustaReta
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[ajustaReta]
+
+  second -i;				// Zera a contagem de tempo.
+
+  for (i=1 ; i<=N ; i++)
+    {
+    nInicial = %1;			// Limite INFERIOR (coluna n das tabelas FFT#) do intervalo que contém o pico.
+    nFinal   = %2;			// Limite SUPERIOR (coluna n das tabelas FFT#) do intervalo que contém o pico.
+
+    run.section(,getNearest,nInicial FFT$(i)_n);
+    nInicial = ivalorP;
+
+    run.section(,getNearest,nFinal   FFT$(i)_n);
+    nFinal   = ivalorP;
+
+    run.section(,picoReta,$(nInicial) $(nFinal) FFT$(i));
+
+    PICO_C[i] = $(xMaximo);		// Coloca a posição do pico na coluna C da tabela PICO, linha #.
+    PICO_D[i] = $(yMaximo);		// Coloca a altura do pico na coluna D da tabela PICO, linha #.
+    }
+
+  sum(PICO_C);
+  PICO_C[N + 2] = $(sum.mean);		// Determina o valor médio das concentrações calculadas (coluna C da tabela PICO).
+  PICO_C[N + 3] = $(sum.sd);		// Determina o desvio padrão das concentrações calculadas.
+
+  run.section(,multiLF,PICO);		// Calcula as mobilidades quânticas.
+
+  worksheet -s 4 0 4 0;			// Seleciona a coluna 4 da tabela PICO.
+  worksheet -p 201 mobilidade; 		// Plota o gráfico da coluna 4 (tabela PICO) conforme o template 'mobilidade.OTP'
+
+  second -e ElapsedTime;		// Associa à variável "ElasedTime" o tempo decorrido na rotina GAUSS.
+  type "ajustaReta: $(ElapsedTime) segundos\n";
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	picoReta
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[picoReta]
+
+  iInicial = %1;
+  iFinal   = %2;
+  
+  window -a %3;
+
+  iMaximo = iInicial;
+  maximo  = col(r)[iMaximo];
+  for (k=iInicial ; k<=iFinal ; k++)
+    if (col(r)[k] > maximo) 
+      {
+      iMaximo = k;
+      maximo = col(r)[k];
+      }
+
+  if ( col(r)[iMaximo - 2] >= col(r)[iMaximo + 2] )
+    {
+    iPt1 = iMaximo - 2;
+    iPt2 = iMaximo - 1;
+    iPt3 = iMaximo;
+    iPt4 = iMaximo + 1;
+    }
+  else
+    {
+    iPt1 = iMaximo - 1;
+    iPt2 = iMaximo;
+    iPt3 = iMaximo + 1;
+    iPt4 = iMaximo + 2;
+    }
+
+  m12 = ( col(r)[iPt2] - col(r)[iPt1] ) / ( col(n)[iPt2] - col(n)[iPt1] );
+  m34 = ( col(r)[iPt4] - col(r)[iPt3] ) / ( col(n)[iPt4] - col(n)[iPt3] );
+
+  xMaximo = (( col(r)[iPt3] - m34 * col(n)[iPt3] ) - ( col(r)[iPt1] - m12 * col(n)[iPt1] )) / (m12 - m34);
+  yMaximo = col(r)[iPt1] + m12 * ( xMaximo - col(n)[iPt1] );
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+//	multiLF
+//
+//	Calcula a mobilidade quântica para uma coleção de pontos (1/B,max(|F|)) gerada pelas rotinas
+// GRUPO e GAUSS. O valor de mobilidade apresentado na linha n (coluna F) da tabela %1 (geralmente %1 = PICO)
+// corresponde àquele obtido pelo ajuste linear à coleção de pontos n, n+1, n+2, ..., N.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+[multiLF]
+
+  window -a %1;
+  worksheet -c F;
+  worksheet -c G;
+  worksheet -c H;
+
+  NpontosMinimo = 1;				// Segundo algum artigo, o número mínimo de pontos que se
+						// deve tomar para calcular a mobilidade é sete.
+
+  %1_H = ln(%1_D);
+  for (i=N-(NpontosMinimo-1) ; i>= 1 ; i--)
+    {
+    lr -n %1_H -b i -e N;
+    %1_F[i] = (10000 * 3.14159265359) / abs(lr.b);
+    %1_G[i] = (%1_F[i])*(lr.sdB/abs(lr.b));
+    }
+
+  delete %1_H;
+  %1!wks.col6.label$ = "Mobilidade (cm2/Vs)";
+  %1!wks.col6.width  = 18;
+  %1!wks.col7.label$ = "std (mobilidade)";
+  %1!wks.col7.width  = 18;
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	getNearest
+//
+// Esta rotina procura um valor qualquer (primeiro argumento) numa lista (dataset) qualquer que esteja em ordem 
+// crescente ou decrescente (segundo argumento). Se o valor exato não for encontrado, o valor mais próximo será 
+// considerado como o resultado; E em ambos os casos a rotina colocará na variável "ivalorP" o ÍNDICE da linha 
+// onde encontrar esse valor. Por exemplo, suponha que se tenha a lista abaixo na coluna A da tabela Data1 (Os 
+// números à esquerda são os índices da linha):
+// 			1-  5
+// 			2-  4.5
+// 			3-  4
+// 			4-  3.2
+// 			5-  0
+// Se estivermos procurando nesta lista (Data1_A) o valor 4.3, deveremos chamar esse script assim:
+//
+// 			run.section(SdH,getNearest,4.2 Data1_A);
+//
+// Neste exemplo, o resultado da busca será 2 pois este é o índice do valor 4.5, o mais próximo de 4.2 existente
+// na lista. Assim, este resultado (2) será colocado na variável "ivalorP" (Índice do VALOR Procurado).
+// obs.: O algorítmo abaixo é nada mais nada menos que uma busca binária e, como tal, precisa de uma lista
+//       ORDENADA. Não a utilize numa lista que não satisfaça esse critério.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[getNearest]
+
+  valorP  = %1;						// Primeiro argumento: Valor que se quer procurar na lista.
+  ivalorP = 0;
+  iMeio   = 0;
+  iMinimo = 1;
+  iMaximo = $(%[%2,'_']!wks.maxRows);			// Segundo argumento: Lista onde procurar (Dataset).
+
+  if (%3 == 1) 						// Se o terceiro argumento for igual a 1, o resultado da
+       printResult = %3;				// busca será impresso no prompt de comando.
+  else printResult = 0;
+
+							// A variável "Forward" será 1 se a lista dada estiver
+							// em ordem crescente; e 0 se em ordem decrescente. Isto
+							// torna a rotina eficiente em qualquer um desses casos.
+  window -a %[%2,'_'];
+
+  if (col(%[%2,>'_'])[iMaximo] - col(%[%2,>'_'])[iMinimo] > 0) 
+       Forward = 1;
+  else Forward = 0;
+
+  if (Forward == 1)
+    {
+    if (valorP >= col(%[%2,>'_'])[iMaximo]) ivalorP = iMaximo;
+    if (valorP <= col(%[%2,>'_'])[iMinimo]) ivalorP = iMinimo;
+    }
+  else
+    {
+    if (valorP <= col(%[%2,>'_'])[iMaximo]) ivalorP = iMaximo;
+    if (valorP >= col(%[%2,>'_'])[iMinimo]) ivalorP = iMinimo;
+    }
+
+  if (ivalorP > 0)
+    {
+    if (printResult == 1) type "The nearest value is $(col(%[%2,>'_'])[ivalorP]) at row index $(ivalorP) (out of range)";
+    return 0;
+    }
+
+
+  // Busca binária em todas as posições da lista dada.
+  //--------------------------------------------------
+
+  delta = abs(iMaximo - iMinimo);
+
+  for(;delta > 1;)
+    {
+    iMeio = $(int((iMaximo + iMinimo) / 2));
+ 
+    if(valorP >= %2[iMeio])
+      {
+      if(valorP == %2[iMeio]) {ivalorP = iMeio;}
+      else
+        if (Forward == 1) iMinimo = iMeio;
+	else iMaximo = iMeio;
+      }
+    else
+      if (Forward == 1) iMaximo = iMeio;
+      else iMinimo = iMeio;
+
+    if (ivalorP == 0) 					// Se valorP não tiver sido encontrado, re-calcula "delta"...
+      delta = abs(iMaximo - iMinimo);
+    else 						// caso contrário, sai do loop fazendo delta = 0.
+      delta = 0;
+    };
+
+							// Se a busca binária não for capaz de localizar o valor
+							// exato procurado, então a rotina determina o valor
+							// mais próximo.
+  if(ivalorP == 0)	
+    {
+    if(abs(valorP - %2[iMinimo]) > abs(valorP - %2[iMaximo]))
+      ivalorP = iMaximo;
+    else
+      ivalorP = iMinimo;
+    };
+
+  if (printResult == 1) type "The nearest value is $(col(%[%2,>'_'])[ivalorP]) at row index $(ivalorP)";
+
+//  window -h 1;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Fim do arquivo SdH.ogs
+// End of SdH.ogs file
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////////////

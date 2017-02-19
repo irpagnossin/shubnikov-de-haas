@@ -1,0 +1,172 @@
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	HallC
+//
+//	1º - Nome da tabela que contém os resultados das medidas do EFEITO HALL.
+//	//2º - Nome da tabela que contém os resultados das medidas do EFEITO SHUBNIKOV-DE HAAS.
+//	2º - Valor da tensão longitudinal em campo nulo
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[HallC]
+
+  correnteHALL   = 1.0;	// Corrente - em microamperes - utilizada no experimento de efeito Hall.
+  correnteSDH    = 1.0;	// Corrente - em microamperes - utilizada no experimento de Shubnikov-de Haas.
+  campoSuperior  = 0.8;	// Valor do campo - em tesla - que limita o conjunto de pontos a se utilizar.
+			// Este valor deve ser tal que não permita à rotina entrar na região de campo
+			// onde manifestações quânticas do efeito Hall se apresentam.
+  FormFactor     = 2.5;	// Fator de forma. Para a barra-hall utilizada é 2.5.
+
+  %W  = %1;
+  //%S  = %2;
+  tensaoSDH = %2;
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Procura na tabela %S (resultados das medidas de Shubnikov-de Haas) o valor de V_SdH quando B=0T.    //
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //run.section(,getNearest,0.0 %S_A);
+  //tensaoSDH = col(B)[ivalorP];
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Calcula a concentração e mobilidade de transporte a partir da tabela %W (resultados do efeito Hall) //
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  run.section(,getNearest,0.0 %W_A);
+  iCampoInferior = ivalorP;
+  tensaoHALLsemCampo = col(B)[iCampoInferior];
+
+  run.section(,getNearest,campoSuperior %W_A);
+  iCampoSuperior = ivalorP;
+
+  window -a %W;
+  if (iCampoSuperior >= iCampoInferior)
+    {
+    lr -n %W_B -b iCampoInferior -e iCampoSuperior;		// Faz o ajuste linear.
+    worksheet -s 2 iCampoInferior 2 iCampoSuperior;		// Seleciona o conjunto de pontos 
+								// utilizados no ajuste.
+    }
+  else
+    {
+    lr -n %W_B -b iCampoSuperior -e iCampoInferior;
+    worksheet -s 2 iCampoSuperior 2 iCampoInferior;
+    }
+
+  worksheet -p 201 HallC;					// Plota o gráfico.
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Mobilidade e concentração de transporte								 //
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  concentracaoHALL = 0.625 * correnteHALL / (lr.b);
+  erroConcHALL     = (concentracaoHALL * lr.sdB) / (lr.b);
+  mobilidadeHALL   =  6250 * (FormFactor * correnteSDH) / (tensaoSDH * concentracaoHALL);
+  erroMobilHALL    = (mobilidadeHALL * erroConcHALL) / concentracaoHALL;
+
+  type -b "concentracao = $(concentracaoHALL) +- $(erroConcHALL) E12 cm-2
+	   \n mobilidade = $(mobilidadeHALL) +- $(erroMobilHALL) cm2/Vs
+	   \n tensão Hall em B=0: $(1000*tensaoHALLsemCampo) microvolts.";
+
+  type "concentracao = $(concentracaoHALL) ($(erroConcHALL)) E12 cm-2";
+  type "mobilidade   = $(mobilidadeHALL) ($(erroMobilHALL)) cm2/Vs";
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	getNearest
+//
+// Esta rotina procura um valor qualquer (primeiro argumento) numa lista (dataset) qualquer que esteja em ordem 
+// crescente ou decrescente (segundo argumento). Se o valor exato não for encontrado, o valor mais próximo será 
+// considerado como o resultado; E em ambos os casos a rotina colocará na variável "ivalorP" o ÍNDICE da linha 
+// onde encontrar esse valor. Por exemplo, suponha que se tenha a lista abaixo na coluna A da tabela Data1 (Os 
+// números à esquerda são os índices da linha):
+// 			1-  5
+// 			2-  4.5
+// 			3-  4
+// 			4-  3.2
+// 			5-  0
+// Se estivermos procurando nesta lista (Data1_A) o valor 4.3, deveremos chamar esse script assim:
+//
+// 			run.section(SdH,getNearest,4.2 Data1_A);
+//
+// Neste exemplo, o resultado da busca será 2 pois este é o índice do valor 4.5, o mais próximo de 4.2 existente
+// na lista. Assim, este resultado (2) será colocado na variável "ivalorP" (Índice do VALOR Procurado).
+// obs.: O algorítmo abaixo é nada mais nada menos que uma busca binária e, como tal, precisa de uma lista
+//       ORDENADA. Não a utilize numa lista que não satisfaça esse critério.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+[getNearest]
+
+  valorP  = %1;						// Primeiro argumento: Valor que se quer procurar na lista.
+  ivalorP = 0;
+  iMeio   = 0;
+  iMinimo = 1;
+  iMaximo = $(%[%2,'_']!wks.maxRows);			// Segundo argumento: Lista onde procurar (Dataset).
+
+  if (%3 == 1) 						// Se o terceiro argumento for igual a 1, o resultado da
+       printResult = %3					// busca será impresso no prompt de comando.
+  else printResult = 0;
+
+							// A variável "Forward" será 1 se a lista dada estiver
+							// em ordem crescente; e 0 se em ordem decrescente. Isto
+							// torna a rotina eficiente em qualquer um desses casos.
+  window -a %[%2,'_'];
+
+  if (col(%[%2,>'_'])[iMaximo] - col(%[%2,>'_'])[iMinimo] > 0) 
+       Forward = 1;
+  else Forward = 0;
+
+  if (Forward == 1)
+    {
+    if (valorP >= col(%[%2,>'_'])[iMaximo]) ivalorP = iMaximo;
+    if (valorP <= col(%[%2,>'_'])[iMinimo]) ivalorP = iMinimo;
+    }
+  else
+    {
+    if (valorP <= col(%[%2,>'_'])[iMaximo]) ivalorP = iMaximo;
+    if (valorP >= col(%[%2,>'_'])[iMinimo]) ivalorP = iMinimo;
+    }
+
+  if (ivalorP > 0)
+    {
+    if (printResult == 1) type "The nearest value is $(col(%[%2,>'_'])[ivalorP]) at row index $(ivalorP) (out of range)";
+    return 0;
+    }
+
+
+  // Busca binária em todas as posições da lista dada.
+  //--------------------------------------------------
+
+  delta = abs(iMaximo - iMinimo);
+
+  for(;delta > 1;)
+    {
+    iMeio = $(int((iMaximo + iMinimo) / 2));
+ 
+    if(valorP >= %2[iMeio])
+      {
+      if(valorP == %2[iMeio]) {ivalorP = iMeio;}
+      else
+        if (Forward == 1) iMinimo = iMeio;
+	else iMaximo = iMeio;
+      }
+    else
+      if (Forward == 1) iMaximo = iMeio;
+      else iMinimo = iMeio;
+
+    if (ivalorP == 0) 					// Se valorP não tiver sido encontrado, re-calcula "delta"...
+      delta = abs(iMaximo - iMinimo);
+    else 						// caso contrário, sai do loop fazendo delta = 0.
+      delta = 0;
+    };
+
+							// Se a busca binária não for capaz de localizar o valor
+							// exato procurado, então a rotina determina o valor
+							// mais próximo.
+  if(ivalorP == 0)	
+    {
+    if(abs(valorP - %2[iMinimo]) > abs(valorP - %2[iMaximo]))
+      ivalorP = iMaximo;
+    else
+      ivalorP = iMinimo;
+    };
+
+  if (printResult == 1) type "The nearest value is $(col(%[%2,>'_'])[ivalorP]) at row index $(ivalorP)";
+
+  window -h 1;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
