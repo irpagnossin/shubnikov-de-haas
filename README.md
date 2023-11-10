@@ -1,17 +1,17 @@
-#SdH
+# Shubnikov-de Haas (SdH) e Hall clássico
 
-Este arquivo de script do Microcal Origin foi desenvolvido para auxiliar nas análises do efeito
-Shubnikov-de Haas. Com seu auxílio, e NUNCA dispensando a análise do pesquisador, pode-se determinar,
-a partir de um conjunto de pares ordenados ($B$,$V_{xx}$), a concentração de portadores em cada uma das
-sub-bandas observáveis e suas respectivas mobilidades quânticas (o método é tão preciso quanto melhor
-for o espectro obtido, que por sua vez depende não só da qualidade da amostra como também das capaci-
-dades dos aparelhos envolvidos).
+Shubnikov-de Haas é o nome dado à variação da resistividade de um material em função do campo magnético aplicado a ele. Em particular, ao variar continuamente o campo magnético observa-se oscilações na resistividade que estão intimamente relacionadas com a densidade e mobilidade dos portadores de carga elétrica. Como resultado, a devida análise dessas oscilações permite extrair essas informações do material. Por outro lado, o efeito Hall clássico refere-se à variação da resistividade transversão à corrente elétrica, a partir da qual é possível determinar a mobilidade de transporte dos portadores.
 
-Para detalhes do método e de como utilizar apropriadamente esse script, consulte a página do autor.
+Este projeto contém scripts do Microcal Origin para obter a concentração de portadores e suas mobilidades quânticas, inclusive no caso de várias sub-bandas (consegui distinguir até três). Não obstante, esses scripts implementam uma abordagem inédita que desenvolvi no meu trabalho de mestrado, no Instituto de Física da Universidade de São Paulo: veja o apêndice B desse trabalho ([aqui](https://www.teses.usp.br/teses/disponiveis/43/43134/tde-07072004-104036/publico/IvanMS.pdf)). Além disso, os scripts permitem obter a mobilidade de transporte, sem distinguir as sub-bandas.
 
-##Dependências
-- FIT.OGS e FFT.OTW (ambos acompanham o Origin)
+Os scripts foram originalmente criados para serem executados interativamente no [Microcal Origin](https://microcal-origin.software.informer.com/), versão 6. Ou seja, apesar de o script automatizar e agilizar boa parte da análise, o analista é indispensável nesse processo.
+
+## Dependências
+- `FIT.OGS` e `FFT.OTW` (ambos acompanham o Origin)
+
+## Bugs
+- Frequentemente ocorre de a rotina `GAUSS` determinar erroneamente o pico e sua posição para o caso da janela Hanning mais curta. Uma segunda (ou terceira) tentativa deve resolver. Ainda não sei a origem deste problema.
 - Este script foi testado na versão 6.0 do Microcal Origin. Sabe-se que não funciona na versão 5.0.
 
-##Bugs
-Frequentemente ocorre de a rotina GAUSS determinar erroneamente o pico e sua posição para o caso da janela Hanning mais curta. Uma segunda (ou terceira) tentativa deve resolver. Ainda não sei a origem deste problema.
+## TODO
+- Converter o script num módulo Python.
